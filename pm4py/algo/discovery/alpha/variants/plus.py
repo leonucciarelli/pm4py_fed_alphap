@@ -20,7 +20,7 @@ Website: https://processintelligence.solutions
 Contact: info@processintelligence.solutions
 '''
 import time
-
+from IPython.core.display_functions import display
 from pm4py import util as pmutil
 from pm4py.objects.log.obj import Trace
 from pm4py.util import xes_constants as xes_util
@@ -31,7 +31,8 @@ from copy import deepcopy
 from typing import Optional, Dict, Any, Union, Tuple
 from pm4py.objects.log.obj import EventLog
 from pm4py.objects.petri_net.obj import PetriNet, Marking
-
+import pandas as pd
+from pandas import DataFrame
 
 class Parameters(Enum):
     ACTIVITY_KEY = pmutil.constants.PARAMETER_CONSTANT_ACTIVITY_KEY
@@ -282,7 +283,147 @@ def get_relations(log: EventLog):
 
     for key, value in parallel.items():
         parallel[key] = set(value)
-    return causal, parallel, follows
+    return causal, parallel, follows, square, triangle
+
+def processing_agg(labels: set, causal: Tuple[str, str], follows: Tuple[str, str]):
+	"""
+    Applying the Alpha Miner with the new relations
+
+    Parameters
+    -------------
+    causal
+        Pairs that have a causal relation (->)
+    follows
+        Pairs that have a follow relation (>)
+
+    Returns
+    -------------
+    net
+        Petri net
+    im
+        Initial marking
+    fm
+        Final marking
+    """
+	pairs = []
+	start_activities = {'artificial_start'}
+	end_activities = {'artificial_end'}
+
+	for key, element in causal.items():
+		for item in element:
+			if get_sharp_relation(follows, key, key):
+				if get_sharp_relation(follows, item, item):
+					pairs.append(({key}, {item}))
+
+	# combining pairs
+	for i in range(0, len(pairs)):
+		t1 = pairs[i]
+		for j in range(i, len(pairs)):
+			t2 = pairs[j]
+			if t1 != t2:
+				if t1[0].issubset(t2[0]) or t1[1].issubset(t2[1]):
+					if get_sharp_relations_for_sets(follows, t1[0], t2[0]) and get_sharp_relations_for_sets(follows,
+					                                                                                        t1[1],
+					                                                                                        t2[1]):
+						new_alpha_pair = (t1[0] | t2[0], t1[1] | t2[1])
+						if new_alpha_pair not in pairs:
+							pairs.append((t1[0] | t2[0], t1[1] | t2[1]))
+	# maximize pairs
+	cleaned_pairs = list(filter(lambda p: __pair_maximizer(pairs, p), pairs))
+	# create transitions
+	net = PetriNet('alpha_plus_net_' + str(time.time()))
+	label_transition_dict = {}
+	for label in labels:
+		if label != 'artificial_start' and label != 'artificial_end':
+			label_transition_dict[label] = PetriNet.Transition(label, label)
+			net.transitions.add(label_transition_dict[label])
+		else:
+			label_transition_dict[label] = PetriNet.Transition(label, None)
+			net.transitions.add(label_transition_dict[label])
+	# and source and sink
+	src = add_source(net, start_activities, label_transition_dict)
+	sink = add_sink(net, end_activities, label_transition_dict)
+	# create places
+	for pair in cleaned_pairs:
+		place = PetriNet.Place(str(pair))
+		net.places.add(place)
+		for in_arc in pair[0]:
+			add_arc_from_to(label_transition_dict[in_arc], place, net)
+		for out_arc in pair[1]:
+			add_arc_from_to(place, label_transition_dict[out_arc], net)
+
+	return net, Marking({src: 1}), Marking({sink: 1}), cleaned_pairs
+
+
+def aggregate_fms(fts: list) -> Tuple[DataFrame, list]:
+	for FT in fts:
+		FT.set_index(FT.columns, inplace=True)
+
+	data_rules = {'#': {'#': '#', '->': '->', '<-': '<-', '||': '||', 'T': 'T', 'S': 'S'},
+	              '->': {'#': '->', '->': '->', '<-': '||', '||': '||', 'T': 'T', 'S': 'S'},
+	              '<-': {'#': '<-', '->': '||', '<-': '<-', '||': '||', 'T': 'T', 'S': 'S'},
+	              '||': {'#': '||', '->': '||', '<-': '||', '||': '||', 'T': 'T', 'S': 'S'},
+	              'T': {'#': 'T', '->': 'T', '<-': 'T', '||': 'T', 'T': 'T', 'S': 'S'},
+	              'S': {'#': 'S', '->': 'S', '<-': 'S', '||': 'S', 'T': 'S', 'S': 'S'}, }
+
+	rules_df = pd.DataFrame(data_rules)
+
+	events = set()
+	for FT in fts:
+		events.update(FT.index)
+		events.update(FT.columns)
+
+	events = reorder_events(events)  # for equality check
+	for i, FT in enumerate(fts):
+		FT = FT.reindex(index=events, columns=events, fill_value='#')
+		fts[i] = FT
+
+	print('Footprint Matrixes to aggregate:\n')
+
+	for FT in fts:
+		display(FT)
+		print("\n")
+
+	event_dict = {index: {col: [] for col in events} for index in events}
+
+	for event_index in events:
+		for event_col in events:
+			transitions = [FT.at[event_index, event_col] for FT in fts]
+			tr_sum = '.'
+			for tr in transitions:
+				if tr_sum == '.':
+					tr_sum = tr
+					pass
+				else:
+					tr_sum = rules_df.at[tr_sum, tr]
+			if tr_sum == 'T':  # we have to check if the case <event_col T event_index is present>, in this case is S, not T
+				simm_transitions = [FT.at[event_col, event_index] for FT in fts]
+				if 'T' in simm_transitions:
+					tr_sum = 'S'
+
+			event_dict[event_index][event_col] = tr_sum
+
+	sum_FT = pd.DataFrame.from_dict(event_dict, orient='index')
+
+	return sum_FT, events
+
+
+def get_rels_from_fm(fm: DataFrame, events: list) -> Tuple[Dict, Dict]:
+	causal = {}
+	follows = {}
+	for event_index, event_row in fm.iterrows():
+		for event in events:
+			if event_row[event] == '->' or event_row[event] == 'S':
+				if event_index in causal:
+					causal[event_index].append(event)
+				else:
+					causal[event_index] = [event]
+			if event_row[event] == '->' or event_row[event] == 'S' or event_row[event] == 'T':
+				if event_index in follows:
+					follows[event_index].append(event)
+				else:
+					follows[event_index] = [event]
+	return causal, follows
 
 
 def processing(log: EventLog, causal: Tuple[str, str], follows: Tuple[str, str]):
@@ -468,9 +609,64 @@ def postprocessing(net: PetriNet, initial_marking: Marking, final_marking: Marki
                     add_arc_from_to(pair_try_place, label_transition_dict[key], net)
     return net, initial_marking, final_marking
 
+def reorder_events(events):
+	event_list = list(events)
+	first_event = "artificial_start"
+	second_event = "artificial_end"
+	other_events = [e for e in event_list if e != first_event and e != second_event]
+	other_events.sort()
+	ordered_events = [first_event, second_event] + other_events
+	return ordered_events
 
-def apply(trace_log: EventLog, parameters: Optional[Dict[Union[str, Parameters], Any]] = None) -> Tuple[PetriNet, Marking, Marking]:
-    """
+
+def get_event_set(rel_list):
+	events_list = []
+	for rel in rel_list:
+		for event, e_set in rel.items():
+			events_list.append(event)
+			for e in e_set:
+				events_list.append(e)
+	events_set = set(events_list)
+	return events_set
+
+
+def get_fm(filtered_log):
+	causal, parallel, follows, square, triangle = get_relations(filtered_log)
+
+	rel_list = [causal, parallel, follows, triangle, square]
+	events_list = reorder_events(list(get_event_set(rel_list)))
+	footprint_matrix = pd.DataFrame(columns=events_list, index=events_list).fillna(value='#')
+
+	filled_rows = []
+	for event_col in events_list:
+		for event_row in events_list:
+			#            if event_row in filled_rows:
+			#                continue
+			if (event_col in parallel.keys()
+					and (event_col not in triangle.keys())
+					and (event_row not in triangle.keys())
+					and (event_col not in square.keys())
+					and (event_row not in square.keys())
+					and event_row in parallel[event_col]):
+				footprint_matrix[event_col][event_row] = '||'
+				footprint_matrix[event_row][event_col] = '||'
+			if event_col in causal.keys() and event_row in causal[event_col]:
+				footprint_matrix[event_col][event_row] = '<-'
+				footprint_matrix[event_row][event_col] = '->'
+			if event_col in triangle.keys() and event_row in triangle[event_col]:
+				footprint_matrix[event_col][event_row] = '||'
+				footprint_matrix[event_row][event_col] = 'T'
+			if event_col in square.keys() and event_row in square[event_col]:
+				footprint_matrix[event_col][event_row] = 'S'
+				footprint_matrix[event_row][event_col] = 'S'
+		filled_rows.append(event_col)
+
+	#print(footprint_matrix.to_markdown())
+	return footprint_matrix
+
+def apply(trace_log: EventLog, parameters: Optional[Dict[Union[str, Parameters], Any]] = None) -> tuple[
+	Any, Any, Any, DataFrame, Any, Any, Any, dict[str, Any]]:
+	"""
     Apply the Alpha Algorithm to a given log
 
     Parameters
@@ -489,28 +685,85 @@ def apply(trace_log: EventLog, parameters: Optional[Dict[Union[str, Parameters],
     fm
         Final marking
     """
-    if parameters is None:
-        parameters = {}
+	if parameters is None:
+		parameters = {}
 
-    # deep copy the log object because otherwise the original log would be modified with
-    # artificial start/end activities
-    trace_log = deepcopy(trace_log)
+	# deep copy the log object because otherwise the original log would be modified with
+	# artificial start/end activities
+	trace_log = deepcopy(trace_log)
 
-    remove_unconnected = exec_utils.get_param_value(Parameters.REMOVE_UNCONNECTED, parameters, False)
+	remove_unconnected = exec_utils.get_param_value(Parameters.REMOVE_UNCONNECTED, parameters, False)
 
-    filtered_log, loop_one_list, A_filtered, B_filtered, loops_in_first, loops_in_last = preprocessing(trace_log,
-                                                                                                       parameters=parameters)
-    causal, parallel, follows = get_relations(filtered_log)
-    net, initial_marking, final_marking, pairs = processing(filtered_log, causal, follows)
-    net, initial_marking, final_marking = postprocessing(net, initial_marking, final_marking, A_filtered, B_filtered,
-                                                         pairs, loop_one_list)
+	filtered_log, loop_one_list, A_filtered, B_filtered, loops_in_first, loops_in_last = preprocessing(trace_log,
+	                                                                                                   parameters=parameters)
+	causal, parallel, follows, square, triangle = get_relations(filtered_log)
+	footprint_matrix = get_fm(filtered_log)
+	net, initial_marking, final_marking, pairs = processing(filtered_log, causal, follows)
+	net, initial_marking, final_marking = postprocessing(net, initial_marking, final_marking, A_filtered, B_filtered,
+	                                                     pairs, loop_one_list)
 
-    net, initial_marking = remove_initial_hidden_if_possible(net, initial_marking)
-    net = remove_final_hidden_if_possible(net, final_marking)
-    if remove_unconnected:
-        net = remove_unconnected_transitions(net)
+	net, initial_marking = remove_initial_hidden_if_possible(net, initial_marking)
+	net = remove_final_hidden_if_possible(net, final_marking)
+	if remove_unconnected:
+		net = remove_unconnected_transitions(net)
 
-    return net, initial_marking, final_marking
+	rels = {'causal': causal,
+	        'parallel': parallel,
+	        'follows': follows,
+	        'square': square,
+	        'triangle': triangle}
+
+	return net, initial_marking, final_marking, footprint_matrix, loop_one_list, A_filtered, B_filtered, rels
+
+def apply_aggr(fm: DataFrame, events: list, oneL_inputs: Dict, oneL_outputs: Dict, loop_one_list: list) -> tuple[
+	Any, Any, Any]:
+	"""
+	Function applying the postprocessing steps in the aggregator node taking as input the aggregated footprint matrix
+	 and other shared results
+
+	Parameters
+	----------
+	fm
+	    Aggregated Footprint Matrix
+	events
+	    List of all the events present in the aggregated footprint matrix
+	oneL_inputs
+	    Dictionary: collection of activities from all the nodes before the loop-length-one activity
+	oneL_outputs
+	    Dictionary: collection of activities from all the nodes after the loop-length-one activity
+	loop_one_list
+	    Loop one list
+
+	Returns
+	-------
+	net
+	    Net
+	initial_marking
+	    Initial Marking
+	final_marking
+	    Final Marking
+
+	"""
+	causal, follows = get_rels_from_fm(fm=fm, events=events)
+
+	net, initial_marking, final_marking, pairs = processing_agg(set(events), causal, follows)
+
+	net, initial_marking, final_marking = postprocessing(net,
+	                                                     initial_marking,
+	                                                     final_marking,
+	                                                     oneL_inputs,
+	                                                     oneL_outputs,
+	                                                     pairs,
+	                                                     loop_one_list)
+
+	net, initial_marking_final = remove_initial_hidden_if_possible(net, initial_marking)
+	net = remove_final_hidden_if_possible(net, final_marking)
+
+	remove_unconnected = False
+	if remove_unconnected:
+		net = remove_unconnected_transitions(net)
+
+	return net, initial_marking, final_marking
 
 
 def __pair_maximizer(alpha_pairs, pair):
