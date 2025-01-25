@@ -640,13 +640,9 @@ def get_fm(filtered_log):
 	filled_rows = []
 	for event_col in events_list:
 		for event_row in events_list:
-			#            if event_row in filled_rows:
-			#                continue
 			if (event_col in parallel.keys()
-					and (event_col not in triangle.keys())
-					and (event_row not in triangle.keys())
-					and (event_col not in square.keys())
-					and (event_row not in square.keys())
+					and (not (event_col in triangle.keys() and event_row in triangle[event_col]))
+					and (not (event_col in square.keys() and event_row in square[event_col]))
 					and event_row in parallel[event_col]):
 				footprint_matrix[event_col][event_row] = '||'
 				footprint_matrix[event_row][event_col] = '||'
