@@ -20,6 +20,7 @@ Website: https://processintelligence.solutions
 Contact: info@processintelligence.solutions
 '''
 import time
+from pm4py.analysis import check_is_workflow_net, check_soundness
 from IPython.core.display_functions import display
 from pm4py import util as pmutil
 from pm4py.objects.log.obj import Trace
@@ -695,6 +696,8 @@ def apply(trace_log: EventLog, parameters: Optional[Dict[Union[str, Parameters],
 	causal, parallel, follows, square, triangle = get_relations(filtered_log)
 	footprint_matrix = get_fm(filtered_log)
 	net, initial_marking, final_marking, pairs = processing(filtered_log, causal, follows)
+	s_check, _ = check_soundness(net, initial_marking, final_marking)
+	print(f'1-length-loop free net soundness: {s_check}')
 	net, initial_marking, final_marking = postprocessing(net, initial_marking, final_marking, A_filtered, B_filtered,
 	                                                     pairs, loop_one_list)
 
@@ -743,7 +746,8 @@ def apply_aggr(fm: DataFrame, events: list, oneL_inputs: Dict, oneL_outputs: Dic
 	causal, follows = get_rels_from_fm(fm=fm, events=events)
 
 	net, initial_marking, final_marking, pairs = processing_agg(set(events), causal, follows)
-
+	s_check, _ = check_soundness(net, initial_marking, final_marking)
+	print(f'1-length-loop free net soundness: {s_check}')
 	net, initial_marking, final_marking = postprocessing(net,
 	                                                     initial_marking,
 	                                                     final_marking,

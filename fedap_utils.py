@@ -36,3 +36,40 @@ def update_io_dict(oneL_io_list) -> dict:
             else:
                 oneL_io_dic[event_key] = event_value
     return oneL_io_dic
+
+def simulate_nodes_computation(el_splits: list):
+    """
+    Simulation of a federated computation FM. Every split is processed independently. Footprint Matrices and of
+    1-length loops are collected and returned. This simulates sharing the partial results with the master
+    aggregator node.
+
+    Parameters
+    ----------
+    el_splits
+        List of event log
+
+    Returns
+    FTs
+        list of footprint matrices
+    oneL_inputs_dic
+        Dictionary of oneL inputs
+    oneL_outputs_dic
+        Dictionary of oneL outputs
+    loop_one_list
+        List of 1-length loop events
+    -------
+
+    """
+    oneL_inputs_list = []
+    oneL_outputs_list = []
+    loop_one_tot_list = []
+    FTs = []
+    for el in el_splits:
+        net_split, initial_marking_split, final_marking_split, footprint_matrix_split, loop_one_list_split, oneL_inputs_split, oneL_outputs_split = apply_monocentric(el)
+        oneL_inputs_list.append(oneL_inputs_split)
+        oneL_outputs_list.append(oneL_outputs_split)
+        loop_one_tot_list = list(set(loop_one_tot_list + loop_one_list_split))
+        FTs.append(footprint_matrix_split)
+    oneL_outputs_dic = update_io_dict(oneL_outputs_list)
+    oneL_inputs_dic = update_io_dict(oneL_inputs_list)
+    return FTs, oneL_inputs_dic, oneL_outputs_dic, loop_one_tot_list
