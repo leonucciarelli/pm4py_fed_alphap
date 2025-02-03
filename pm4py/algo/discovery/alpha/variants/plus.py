@@ -288,10 +288,13 @@ def get_relations(log: EventLog):
 
 def processing_agg(labels: set, causal: Tuple[str, str], follows: Tuple[str, str]):
 	"""
-    Applying the Alpha Miner with the new relations
+    Applying the Alpha Miner with the new relations in the Aggregator Node. Event Log is not used. Start and End
+    activities must be assumed to be known.
 
     Parameters
     -------------
+    labels:
+        Set of events
     causal
         Pairs that have a causal relation (->)
     follows
@@ -379,7 +382,7 @@ def aggregate_fms(fts: list) -> Tuple[DataFrame, list]:
 		FT = FT.reindex(index=events, columns=events, fill_value='#')
 		fts[i] = FT
 
-	print('Footprint Matrixes to aggregate:\n')
+	print('Footprint Matrices to aggregate:\n')
 
 	for FT in fts:
 		display(FT)
@@ -619,7 +622,6 @@ def reorder_events(events):
 	ordered_events = [first_event, second_event] + other_events
 	return ordered_events
 
-
 def get_event_set(rel_list):
 	events_list = []
 	for rel in rel_list:
@@ -658,7 +660,6 @@ def get_fm(filtered_log):
 				footprint_matrix[event_row][event_col] = 'S'
 		filled_rows.append(event_col)
 
-	#print(footprint_matrix.to_markdown())
 	return footprint_matrix
 
 def apply(trace_log: EventLog, parameters: Optional[Dict[Union[str, Parameters], Any]] = None) -> tuple[

@@ -39,14 +39,14 @@ def update_io_dict(oneL_io_list) -> dict:
 
 def simulate_nodes_computation(el_splits: list):
     """
-    Simulation of a federated computation FM. Every split is processed independently. Footprint Matrices and of
+    Simulation of a federated FM computation. Every split is processed independently. Footprint Matrices and
     1-length loops are collected and returned. This simulates sharing the partial results with the master
     aggregator node.
 
     Parameters
     ----------
     el_splits
-        List of event log
+        List of event log splits
 
     Returns
     FTs
