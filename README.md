@@ -1,6 +1,19 @@
 ## Federated Alpha+ Algorithm 
 This Fork of PM4Py repository contains an implementation of the Federated Version of the Alpha+ Algorithm. FedAlphaNotebook.ipynb contains a demo test.
 
+Dataset used for testing:
+```bibtex
+@article{atassi2014pro,
+  title={The PRO-ACT database: design, initial analyses, and predictive features},
+  author={Atassi, Nazem and Berry, James and Shui, Amy and Zach, Neta and Sherman, Alexander and Sinani, Ervin and Walker, Jason and Katsovskiy, Igor and Schoenfeld, David and Cudkowicz, Merit and others},
+  journal={Neurology},
+  volume={83},
+  number={19},
+  pages={1719--1725},
+  year={2014},
+  publisher={AAN Enterprises}
+}
+```
 # PM4Py
 PM4Py is a python library that supports state-of-the-art process mining algorithms in python. 
 It is open source and intended to be used in both academia and industry projects.
