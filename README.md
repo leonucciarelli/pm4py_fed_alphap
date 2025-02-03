@@ -1,3 +1,6 @@
+## Federated Alpha+ Algorithm 
+This Fork of PM4Py repository contains an implementation of the Federated Version of the Alpha+ Algorithm. FedAlphaNotebook.ipynb contains a demo test.
+
 # PM4Py
 PM4Py is a python library that supports state-of-the-art process mining algorithms in python. 
 It is open source and intended to be used in both academia and industry projects.
