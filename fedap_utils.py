@@ -4,6 +4,7 @@ import pm4py
 
 def load_convert_el(el_path, case_id, activity_key, timestamp_key):
     df = pd.read_csv(filepath_or_buffer=el_path, dtype={case_id: int, activity_key: str})
+    df = df[[case_id, activity_key, timestamp_key]]
     df[timestamp_key] = pd.to_datetime(df[timestamp_key])
     event_log = pm4py.format_dataframe(df, case_id=case_id, activity_key=activity_key, timestamp_key=timestamp_key)
     event_log = log_converter.apply(event_log)
